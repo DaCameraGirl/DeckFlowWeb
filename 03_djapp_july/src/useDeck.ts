@@ -25,7 +25,14 @@ type Action =
   | { type: 'END' }
   | { type: 'SET_VOLUME'; value: number }
   | { type: 'SET_EQ'; band: EqBand; value: number }
-  | { type: 'SET_FILTER'; value: number };
+  | { type: 'SET_FILTER'; value: number }
+  | { type: 'SET_TEMPO'; value: number }
+  | { type: 'SET_LOOP_IN'; norm: number }
+  | { type: 'SET_LOOP_OUT'; norm: number }
+  | { type: 'TOGGLE_LOOP' }
+  | { type: 'EXIT_LOOP'; currentPos: number }
+  | { type: 'SET_CUE'; norm: number }
+  | { type: 'JUMP_TO_CUE' };
 
 const clamp01 = (n: number) => Math.min(1, Math.max(0, n));
 
@@ -49,6 +56,37 @@ function reducer(s: DeckState, a: Action): DeckState {
       return { ...s, [a.band]: a.value };
     case 'SET_FILTER':
       return { ...s, filterCutoff: Math.max(-1, Math.min(1, a.value)) };
+    case 'SET_TEMPO':
+      return { ...s, tempo: Math.max(0.5, Math.min(2.0, a.value)) };
+    case 'SET_LOOP_IN':
+      return s.track ? { ...s, loopIn: clamp01(a.norm) } : s;
+    case 'SET_LOOP_OUT':
+      // Validate that loopOut is after loopIn
+      const newOut = clamp01(a.norm);
+      return s.track && newOut > s.loopIn
+        ? { ...s, loopOut: newOut }
+        : s;
+    case 'TOGGLE_LOOP':
+      // Only allow enabling loop if length is reasonable
+      const minLoopLen = 0.01; // 1% of track minimum
+      const canLoop = s.track && (s.loopOut - s.loopIn) >= minLoopLen;
+      return canLoop ? { ...s, loopEnabled: !s.loopEnabled } : s;
+    case 'EXIT_LOOP':
+      // Re-base transport to current position to continue seamlessly
+      return s.track && s.loopEnabled
+        ? { 
+            ...s, 
+            loopEnabled: false, 
+            baseNorm: clamp01(a.currentPos), 
+            seekGen: s.seekGen + 1 
+          }
+        : s;
+    case 'SET_CUE':
+      return s.track ? { ...s, cuePoint: clamp01(a.norm) } : s;
+    case 'JUMP_TO_CUE':
+      return s.track && s.cuePoint >= 0
+        ? { ...s, baseNorm: s.cuePoint, seekGen: s.seekGen + 1 }
+        : s;
     default:
       return s;
   }
@@ -64,6 +102,13 @@ export interface UseDeck {
   setVolume: (value: number) => void;
   setEq: (band: EqBand, value: number) => void;
   setFilter: (value: number) => void;
+  setTempo: (value: number) => void;
+  setLoopIn: (norm: number) => void;
+  setLoopOut: (norm: number) => void;
+  toggleLoop: () => void;
+  exitLoop: () => void;
+  setCue: (norm: number) => void;
+  jumpToCue: () => void;
 }
 
 export function useDeck(id: string, audioReady: boolean): UseDeck {
@@ -74,6 +119,12 @@ export function useDeck(id: string, audioReady: boolean): UseDeck {
   // Ref so the snapshot handler reads current `playing` without re-subscribing.
   const playingRef = useRef(state.playing);
   playingRef.current = state.playing;
+
+  // Track position in a ref for EXIT_LOOP action
+  const positionRef = useRef(0);
+  useEffect(() => { 
+    positionRef.current = position; 
+  }, [position]);
 
   // Route this deck's analysis events (playhead + meter) into local state.
   useEffect(() => {
@@ -127,6 +178,53 @@ export function useDeck(id: string, audioReady: boolean): UseDeck {
   const setVolume = useCallback((value: number) => dispatch({ type: 'SET_VOLUME', value }), []);
   const setEq = useCallback((band: EqBand, value: number) => dispatch({ type: 'SET_EQ', band, value }), []);
   const setFilter = useCallback((value: number) => dispatch({ type: 'SET_FILTER', value }), []);
+  const setTempo = useCallback((value: number) => dispatch({ type: 'SET_TEMPO', value }), []);
 
-  return { state, position, level, load, togglePlay, seek, setVolume, setEq, setFilter };
+  const setLoopIn = useCallback(
+    (norm: number) => dispatch({ type: 'SET_LOOP_IN', norm }),
+    []
+  );
+
+  const setLoopOut = useCallback(
+    (norm: number) => dispatch({ type: 'SET_LOOP_OUT', norm }),
+    []
+  );
+
+  const toggleLoop = useCallback(
+    () => dispatch({ type: 'TOGGLE_LOOP' }),
+    []
+  );
+
+  const exitLoop = useCallback(() => {
+    dispatch({ type: 'EXIT_LOOP', currentPos: positionRef.current });
+  }, []);
+
+  const setCue = useCallback(
+    (norm: number) => dispatch({ type: 'SET_CUE', norm }),
+    []
+  );
+
+  const jumpToCue = useCallback(
+    () => dispatch({ type: 'JUMP_TO_CUE' }),
+    []
+  );
+
+  return { 
+    state, 
+    position, 
+    level, 
+    load, 
+    togglePlay, 
+    seek, 
+    setVolume, 
+    setEq, 
+    setFilter, 
+    setTempo,
+    setLoopIn,
+    setLoopOut,
+    toggleLoop,
+    exitLoop,
+    setCue,
+    jumpToCue,
+  };
 }

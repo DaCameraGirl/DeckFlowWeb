@@ -36,6 +36,12 @@ export interface DeckState {
   eqMid: number; // dB, -12..12
   eqHigh: number; // dB, -12..12
   filterCutoff: number; // -1 (LPF down to 100Hz) .. 0 (bypass) .. 1 (HPF up to 10kHz)
+  // Phase 4: Loop state
+  loopEnabled: boolean;
+  loopIn: number; // normalized position 0..1
+  loopOut: number; // normalized position 0..1
+  // Phase 4: Cue point
+  cuePoint: number; // normalized position 0..1, -1 = not set
 }
 
 export function initialDeckState(id: string): DeckState {
@@ -51,6 +57,10 @@ export function initialDeckState(id: string): DeckState {
     eqMid: 0,
     eqHigh: 0,
     filterCutoff: 0,
+    loopEnabled: false,
+    loopIn: 0,
+    loopOut: 1,
+    cuePoint: -1,
   };
 }
 
@@ -125,10 +135,29 @@ export function buildDeckSignal(s: DeckState): DeckSignal | null {
   const seekTrig = el.const({ key: `${s.id}_seek`, value: s.seekGen });
   const base = el.const({ key: `${s.id}_base`, value: s.baseNorm });
 
+  // Unwrapped position for snapshot reporting
   const position = el.add(base, el.accum(inc, seekTrig));
 
-  const leftRaw = el.table({ key: `${s.id}_tblL`, path: pathL }, position);
-  const rightRaw = el.table({ key: `${s.id}_tblR`, path: pathR }, position);
+  // Apply loop wrapping if enabled
+  let playPosition = position;
+  if (s.loopEnabled && s.loopOut > s.loopIn) {
+    const loopLen = s.loopOut - s.loopIn;
+    const loopInConst = el.const({ key: `${s.id}_loopIn`, value: s.loopIn });
+    const loopLenConst = el.const({ key: `${s.id}_loopLen`, value: loopLen });
+    
+    // Floored modulo: offset - len·floor(offset/len)
+    // This wraps the position within [loopIn, loopOut)
+    const offset = el.sub(position, loopInConst);
+    const wrapped = el.sub(
+      offset,
+      el.mul(loopLenConst, el.floor(el.div(offset, loopLenConst)))
+    );
+    playPosition = el.add(loopInConst, wrapped);
+  }
+
+  // Use playPosition for audio playback
+  const leftRaw = el.table({ key: `${s.id}_tblL`, path: pathL }, playPosition);
+  const rightRaw = el.table({ key: `${s.id}_tblR`, path: pathR }, playPosition);
 
   let left = channelChain(leftRaw, s);
   const right = channelChain(rightRaw, s);

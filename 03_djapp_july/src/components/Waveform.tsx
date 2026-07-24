@@ -17,12 +17,24 @@ interface Props {
   peaks: TrackPeaks | null;
   position: number; // normalized 0..1
   onSeek: (norm: number) => void;
+  loopEnabled?: boolean;
+  loopIn?: number;
+  loopOut?: number;
+  cuePoint?: number;
 }
 
 const CACHE_HEIGHT = 256; // offscreen bitmap height; scaled to the canvas at blit time
 const MIN_WINDOW = 0.02; // closest zoom: 2% of the track visible
 
-export default function Waveform({ peaks, position, onSeek }: Props) {
+export default function Waveform({ 
+  peaks, 
+  position, 
+  onSeek,
+  loopEnabled = false,
+  loopIn = 0,
+  loopOut = 1,
+  cuePoint = -1,
+}: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const cacheRef = useRef<HTMLCanvasElement | null>(null);
   const [windowFrac, setWindowFrac] = useState(1); // fraction of track visible (1 = all)
@@ -115,7 +127,69 @@ export default function Waveform({ peaks, position, onSeek }: Props) {
     // Blit just the visible slice, scaled to the canvas.
     ctx.drawImage(cache, start, 0, win, cache.height, 0, 0, cssW, cssH);
 
-    // Playhead at its true position within the visible window.
+    // Draw loop region if enabled
+    if (loopEnabled && loopIn !== undefined && loopOut !== undefined) {
+      const loopStartX = ((loopIn * total - start) / win) * cssW;
+      const loopEndX = ((loopOut * total - start) / win) * cssW;
+      
+      // Only draw if visible in current window
+      if (loopEndX >= 0 && loopStartX <= cssW) {
+        // Semi-transparent fill for loop region
+        ctx.fillStyle = 'rgba(76, 194, 255, 0.15)';
+        ctx.fillRect(
+          Math.max(0, loopStartX), 
+          0, 
+          Math.min(cssW, loopEndX) - Math.max(0, loopStartX), 
+          cssH
+        );
+        
+        // Loop boundary lines
+        ctx.strokeStyle = '#4cc2ff';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        
+        if (loopStartX >= 0 && loopStartX <= cssW) {
+          ctx.moveTo(loopStartX, 0);
+          ctx.lineTo(loopStartX, cssH);
+        }
+        
+        if (loopEndX >= 0 && loopEndX <= cssW) {
+          ctx.moveTo(loopEndX, 0);
+          ctx.lineTo(loopEndX, cssH);
+        }
+        
+        ctx.stroke();
+      }
+    }
+
+    // Draw cue point marker
+    if (cuePoint !== undefined && cuePoint >= 0) {
+      const cueX = ((cuePoint * total - start) / win) * cssW;
+      
+      // Only draw if visible
+      if (cueX >= -10 && cueX <= cssW + 10) {
+        // Triangle marker pointing down
+        ctx.fillStyle = '#ffcc00';
+        ctx.beginPath();
+        ctx.moveTo(cueX, 0);
+        ctx.lineTo(cueX - 6, 12);
+        ctx.lineTo(cueX + 6, 12);
+        ctx.closePath();
+        ctx.fill();
+        
+        // Vertical line from marker
+        ctx.strokeStyle = '#ffcc00';
+        ctx.lineWidth = 1;
+        ctx.setLineDash([4, 4]);
+        ctx.beginPath();
+        ctx.moveTo(cueX, 12);
+        ctx.lineTo(cueX, cssH);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+    }
+
+    // Playhead at its true position within the visible window (on top of everything)
     const playX = ((position * total - start) / win) * cssW;
     ctx.strokeStyle = '#ff6b6b';
     ctx.lineWidth = 2;
@@ -123,7 +197,7 @@ export default function Waveform({ peaks, position, onSeek }: Props) {
     ctx.moveTo(playX, 0);
     ctx.lineTo(playX, cssH);
     ctx.stroke();
-  }, [position, windowFor]);
+  }, [position, windowFor, loopEnabled, loopIn, loopOut, cuePoint]);
 
   useEffect(() => {
     draw();

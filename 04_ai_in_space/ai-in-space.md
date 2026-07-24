@@ -114,7 +114,7 @@ Watch the following video to see a preview of the steps in this tutorial.
 Follow these steps to create a directory and open that directory in Bob:
 
 1. Choose a folder location for the lab work.
-1. Download the [ai-in-space.zip](https://github.com/academic-initiative/skillsbuild/blob/main/ai-in-space/data/ai-in-space.zip) from the IBM SkillsBuild GitHub repository to the folder you chose in step 1.
+1. Download the [ai-in-space.zip](https://github.com/IBM-SkillsBuild-AI-Builders-Challenge/hands-on-labs/raw/refs/heads/main/04_ai_in_space/ai-in-space.zip) from the AI Builders Challenge GitHub repository to the folder you chose in step 1.
 1. In IBM Bob, verify whether the terminal panel is visible. If you don't see a terminal panel, click **Terminal > New Terminal**.
 1. Use the `cd` command in the terminal panel to move into that folder.
 1. Execute the following commands to create the directory and unzip the repository.
